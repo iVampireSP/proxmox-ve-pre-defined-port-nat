@@ -1,0 +1,245 @@
+<div class="form-group">
+  <label for="calc_ip_input">虚拟机的内网 IP</label>
+  <input
+    type="text"
+    name="ip"
+    id="calc_ip_input"
+    placeholder="输入 IP 地址，比如 192.168.1.20"
+    class="form-control"
+  />
+</div>
+
+<div class="mt-3" id="calc_ip_alert"></div>
+
+<div class="mt-3" id="calc_ip_output"></div>
+
+<div class="mt-3" id="calc_ip_supported"></div>
+<script>
+  let calc_ip_input = document.getElementById('calc_ip_input')
+
+  const supported_ips = {
+    '192.168.1': {
+      startPort: 21000,
+      portPerHost: 10,
+      ip: 'just-test.com',
+    },
+    '192.168.3': {
+      startPort: 30000,
+      portPerHost: 10,
+      ip: 'mhy7.muhanyun.cn',
+    },
+  }
+
+  // 显示 calc_ip_supported
+  let calc_ip_supported = document.getElementById('calc_ip_supported')
+  // 循环 supported_ips
+  let supported_ips_html = ''
+  for (let network in supported_ips) {
+    supported_ips_html += `<li>${network}.0</li>`
+  }
+
+  calc_ip_supported.innerHTML = `
+            <div class="alert alert-info" role="alert">
+                <p>支持的网段</p>
+                <ul>
+${supported_ips_html}
+                </ul>
+            </div>
+        `
+
+  // 如果 url 中有 ip 参数，那么就用 url 中的 ip 参数
+  let url = new URL(window.location.href)
+  let url_ip = url.searchParams.get('ip')
+
+  if (url_ip) {
+    calc_ip_input.value = url_ip
+    calc()
+  }
+
+  // 为输入框添加事件监听
+  calc_ip_input.addEventListener('input', calc)
+
+  function calc() {
+    // 获取输入框的值
+    let ip = calc_ip_input.value
+
+    // 将 。 替换为 .
+    ip = ip.replace(/。/g, '.')
+    // 然后重新赋值给输入框
+    calc_ip_input.value = ip
+
+    if (isIPv6(ip)) {
+      alert_error('IPv6 地址不需要计算端口范围。')
+      return
+    }
+
+    if (!isIPv4(ip)) {
+      alert_error('不是合法的 IPv4。')
+      return
+    }
+
+    // 拆分 IP 地址
+    let { network, host } = splitIPv4(ip)
+
+    if (host === '0' || host === '255') {
+      alert_error('主机号不能为 0 或 255。')
+      return
+    }
+
+    // 检查是否支持该 IP 地址
+    if (!supported_ips[network]) {
+      alert_error('此网段不支持计算端口范围。')
+      return
+    }
+
+    // 获取端口范围
+    let { startPort, portPerHost } = supported_ips[network]
+
+    alert_error(null)
+
+    // 计算端口范围
+    let portRange = calcPortRange(host, startPort, portPerHost + 1)
+    console.log(portRange)
+
+    let domain = supported_ips[network].ip
+
+    // 输出端口范围
+    let outputElement = document.getElementById('calc_ip_output')
+    outputElement.innerHTML = `
+             <div class="alert alert-success" role="alert">
+<p>IP 地址 ${ip} 对应的端口范围是 ${portRange.start} 到 ${portRange.end}。</p>
+<p>远程地址是 ${domain}。</p>
+<p>SSH 端口：${portRange.ssh_port}, 地址是 ${domain}:${portRange.ssh_port}。</p>
+<p>RDP 端口：${portRange.rdp_port}, 地址是 ${domain}:${portRange.rdp_port}。</p>
+<p>其他端口：${portRange.real_start} 到 ${portRange.end}</p>
+
+                 <p>
+<i class="fas fa-angle-double-right"></i>&nbsp;如果您的内网端口是 ${portRange.real_start},
+那么您的公网端口也是 ${portRange.real_start}。
+                     <br />
+<i class="fas fa-angle-double-right"></i>&nbsp;只要是 ${portRange.real_start} 到 ${portRange.end}
+之间的内网端口，都对应 ${portRange.real_start} 到 ${portRange.end} 之间的公网端口。
+                 </p>
+             </div>
+             `
+
+    // 给 URL 加上 ip=xxx 参数
+    url.searchParams.set('ip', ip)
+    window.history.replaceState({}, '', url)
+  }
+
+  // 检测是不是合法的 IP 地址
+  function isIPv4(address) {
+    // 使用正则表达式匹配IPv4地址的格式
+    var pattern = /^(\d{1,3}\.){3}\d{1,3}$/
+
+    // 检查格式是否匹配
+    if (!pattern.test(address)) {
+      return false
+    }
+
+    // 将IPv4地址拆分为四个部分
+    var parts = address.split('.')
+
+    // 检查每个部分的值是否在有效范围内
+    for (var i = 0; i < 4; i++) {
+      var partValue = parseInt(parts[i], 10)
+      if (partValue < 0 || partValue > 255 || isNaN(partValue)) {
+        return false
+      }
+    }
+
+    return true
+  }
+
+  function isIPv6(address) {
+    // 使用正则表达式匹配IPv6地址的格式
+    var pattern = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/
+
+    // 检查格式是否匹配
+    if (!pattern.test(address)) {
+      return false
+    }
+
+    // 检查地址中是否有连续的多个冒号
+    if (address.indexOf('::') !== -1) {
+      // 最多只能有一个双冒号
+      if (address.split('::').length !== 2) {
+        return false
+      }
+
+      // 双冒号不能位于地址的开头或结尾
+      if (address.startsWith('::') || address.endsWith('::')) {
+        return false
+      }
+    }
+
+    // 检查每个分组的长度和范围
+    var groups = address.split(':')
+    for (var i = 0; i < groups.length; i++) {
+      var group = groups[i]
+      if (
+        group.length === 0 ||
+        group.length > 4 ||
+        !/^[0-9a-fA-F]{1,4}$/.test(group)
+      ) {
+        return false
+      }
+    }
+
+    return true
+  }
+
+  function splitIPv4(address) {
+    // 检查IPv4地址是否合法
+    if (!isIPv4(address)) {
+      console.log('Invalid IPv4 address.')
+      return
+    }
+
+    // 将IPv4地址拆分为四个部分
+    var parts = address.split('.')
+
+    // 提取网络号和主机号
+    var network = parts.slice(0, 3).join('.')
+    var host = parts[3]
+
+    return {
+      network: network,
+      host: host,
+    }
+  }
+
+  function alert_error(msg) {
+    var alertElement = document.getElementById('calc_ip_alert')
+
+    // 隐藏错误消息
+    if (!msg) {
+      alertElement.style.display = 'none'
+      return
+    }
+
+    // 显示错误消息
+    alertElement.innerText = msg
+    alertElement.style.display = 'block'
+    alertElement.classList.add('alert', 'alert-danger')
+  }
+
+  function calcPortRange(hostNumber, startPort, portPerHost) {
+    // 计算端口范围
+    const startPortNumber = startPort + hostNumber * portPerHost
+    const endPortNumber = startPortNumber + portPerHost - 1
+
+    const ssh_port = startPortNumber
+    const rdp_port = startPortNumber + 1
+    const real_start = startPortNumber + 2
+
+    return {
+      start: startPortNumber,
+      end: endPortNumber,
+      ssh_port: ssh_port,
+      rdp_port: rdp_port,
+      real_start: real_start,
+    }
+  }
+</script>
