@@ -38,9 +38,6 @@ ip=${ip%.*}
 # portPerHost + 1
 portPerHost=$((portPerHost + 1))
 
-# 启用IP转发
-echo 1 > /proc/sys/net/ipv4/ip_forward
-
 # 清除旧的iptables规则
 iptables -t nat -F
 iptables -t nat -X
@@ -53,6 +50,9 @@ iptables -Z
 iptables -P INPUT ACCEPT
 iptables -P FORWARD ACCEPT
 iptables -P OUTPUT ACCEPT
+
+# 启用IP转发
+echo 1 > /proc/sys/net/ipv4/ip_forward
 
 # 计算每个主机号的端口范围
 function calculatePortRanges() {
